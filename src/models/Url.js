@@ -1,132 +1,95 @@
-const mongoose = require('mongoose');
+const { pool } = require('../config/database');
 
 /**
- * URL Schema for MongoDB
- * 
- * Design Decisions:
- * - shortCode is unique and indexed for O(1) lookup performance
- * - originalUrl is indexed to prevent duplicates and enable fast duplicate detection
- * - clickCount tracks usage without storing user data (privacy-focused)
- * - Timestamps track creation and last access for analytics and cleanup
- * - TTL index can be added for automatic expiration if needed
+ * URL Model - PostgreSQL implementation
  */
-
-const urlSchema = new mongoose.Schema({
-  // Short code that appears in the shortened URL
-  shortCode: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true,
-    index: true,
-    minlength: 6,
-    maxlength: 12
-  },
-  
-  // Original long URL that the short code redirects to
-  originalUrl: {
-    type: String,
-    required: true,
-    trim: true,
-    index: true,  // Indexed for duplicate detection
-    maxlength: 2048  // Maximum URL length per RFC 2616
-  },
-  
-  // Click tracking (no user data stored)
-  clickCount: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  
-  // Timestamp of last access for analytics
-  lastAccessed: {
-    type: Date,
-    default: null
-  },
-  
-  // Custom redirect type (301 permanent or 302 temporary)
-  redirectType: {
-    type: Number,
-    enum: [301, 302],
-    default: 301
-  },
-  
-  // Optional: expiration date for temporary URLs
-  expiresAt: {
-    type: Date,
-    default: null,
-    index: true
-  },
-  
-  // Optional: custom alias requested by user
-  customAlias: {
-    type: Boolean,
-    default: false
-  },
-  
-  // Metadata for debugging and monitoring
-  metadata: {
-    createdBy: {
-      type: String,
-      default: 'system'
-    },
-    userAgent: String,
-    ipHash: String  // Hashed IP for abuse detection without storing raw IPs
+class Url {
+  /**
+   * Create a new shortened URL
+   */
+  static async create(data) {
+    const { shortCode, originalUrl, redirectType, customAlias, expiresAt, metadata } = data;
+    
+    const query = `
+      INSERT INTO urls (short_code, original_url, redirect_type, custom_alias, expires_at, metadata, ip_hash, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `;
+    
+    const values = [
+      shortCode,
+      originalUrl,
+      redirectType || 301,
+      customAlias || false,
+      expiresAt || null,
+      metadata || {},
+      metadata?.ipHash || null,
+      metadata?.createdBy || 'api'
+    ];
+    
+    const result = await pool.query(query, values);
+    return this.mapRow(result.rows[0]);
   }
-}, {
-  timestamps: true,  // Adds createdAt and updatedAt automatically
-  collection: 'urls'
-});
 
-// Compound index for efficient queries
-urlSchema.index({ originalUrl: 1, createdAt: -1 });
-
-// TTL index for automatic cleanup of expired URLs
-urlSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
-/**
- * Static method to find URL by short code
- * Increments click count and updates last accessed time
- */
-urlSchema.statics.findAndIncrementClicks = async function(shortCode) {
-  return this.findOneAndUpdate(
-    { shortCode, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] },
-    { 
-      $inc: { clickCount: 1 },
-      $set: { lastAccessed: new Date() }
-    },
-    { new: true }
-  );
-};
-
-/**
- * Static method to find existing URL to prevent duplicates
- */
-urlSchema.statics.findByOriginalUrl = async function(originalUrl) {
-  return this.findOne({ 
-    originalUrl,
-    $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
-  });
-};
-
-/**
- * Instance method to check if URL has expired
- */
-urlSchema.methods.isExpired = function() {
-  if (!this.expiresAt) return false;
-  return this.expiresAt < new Date();
-};
-
-// Pre-save hook for validation
-urlSchema.pre('save', function(next) {
-  if (this.expiresAt && this.expiresAt < new Date()) {
-    next(new Error('Expiration date cannot be in the past'));
+  /**
+   * Find URL by short code
+   */
+  static async findOne(filter) {
+    const { shortCode } = filter;
+    const query = 'SELECT * FROM urls WHERE short_code = $1 LIMIT 1';
+    const result = await pool.query(query, [shortCode]);
+    
+    return result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
   }
-  next();
-});
 
-// Create and export the model
-const URL = mongoose.model('URL', urlSchema);
+  /**
+   * Find URL by original URL
+   */
+  static async findByOriginalUrl(originalUrl) {
+    const query = 'SELECT * FROM urls WHERE original_url = $1 LIMIT 1';
+    const result = await pool.query(query, [originalUrl]);
+    
+    return result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
+  }
 
-module.exports = URL;
+  /**
+   * Find URL and increment click count atomically
+   */
+  static async findAndIncrementClicks(shortCode) {
+    const query = `
+      UPDATE urls 
+      SET click_count = click_count + 1, 
+          last_accessed = CURRENT_TIMESTAMP
+      WHERE short_code = $1
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [shortCode]);
+    return result.rows.length > 0 ? this.mapRow(result.rows[0]) : null;
+  }
+
+  /**
+   * Map database row to object with methods
+   */
+  static mapRow(row) {
+    if (!row) return null;
+    
+    return {
+      id: row.id,
+      shortCode: row.short_code,
+      originalUrl: row.original_url,
+      redirectType: row.redirect_type,
+      customAlias: row.custom_alias,
+      clickCount: row.click_count,
+      createdAt: row.created_at,
+      lastAccessed: row.last_accessed,
+      expiresAt: row.expires_at,
+      metadata: row.metadata,
+      isExpired: function() {
+        return this.expiresAt && new Date(this.expiresAt) < new Date();
+      }
+    };
+  }
+}
+
+module.exports = Url;

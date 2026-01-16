@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const URL = require('../models/Url');
+const Url = require('../models/Url');
 const URLValidator = require('../utils/validator');
 const ShortCodeGenerator = require('../utils/shortCodeGenerator');
 const SecurityUtils = require('../utils/security');
@@ -32,7 +32,7 @@ router.post('/shorten', createUrlLimiter, asyncHandler(async (req, res, next) =>
   const normalizedUrl = validation.normalized;
 
   // Check for existing URL to prevent duplicates (optional but preferred)
-  const existingUrl = await URL.findByOriginalUrl(normalizedUrl);
+  const existingUrl = await Url.findByOriginalUrl(normalizedUrl);
   if (existingUrl) {
     // Return existing short URL instead of creating duplicate
     return res.status(200).json({
@@ -62,7 +62,7 @@ router.post('/shorten', createUrlLimiter, asyncHandler(async (req, res, next) =>
     }
 
     // Check if custom alias is available
-    const existingAlias = await URL.findOne({ shortCode: customAlias });
+    const existingAlias = await Url.findOne({ shortCode: customAlias });
     if (existingAlias) {
       return next(new ErrorResponse('Custom alias is already taken', 409));
     }
@@ -72,7 +72,7 @@ router.post('/shorten', createUrlLimiter, asyncHandler(async (req, res, next) =>
   } else {
     // Generate unique short code
     shortCode = await ShortCodeGenerator.generateUnique(async (code) => {
-      const existing = await URL.findOne({ shortCode: code });
+      const existing = await Url.findOne({ shortCode: code });
       return !!existing;
     });
   }
@@ -95,7 +95,7 @@ router.post('/shorten', createUrlLimiter, asyncHandler(async (req, res, next) =>
   const userAgent = SecurityUtils.sanitizeUserAgent(req.get('user-agent'));
 
   // Create URL document
-  const urlDoc = await URL.create({
+  const urlDoc = await Url.create({
     shortCode,
     originalUrl: normalizedUrl,
     redirectType: validRedirectType,
@@ -137,7 +137,7 @@ router.get('/stats/:shortCode', asyncHandler(async (req, res, next) => {
   }
 
   // Find URL
-  const urlDoc = await URL.findOne({ shortCode });
+  const urlDoc = await Url.findOne({ shortCode });
 
   if (!urlDoc) {
     return next(new ErrorResponse('Short URL not found', 404));

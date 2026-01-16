@@ -1,8 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const mongoSanitize = require('express-mongo-sanitize');
-const connectDB = require('./config/database');
+const { connectDB } = require('./config/database');
 const apiRoutes = require('./routes/api');
 const redirectRoutes = require('./routes/redirect');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
@@ -40,9 +39,6 @@ app.use(express.static(path.join(__dirname, '../public')));
 // Body parser
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
-
-// Security: Sanitize data against NoSQL injection
-app.use(mongoSanitize());
 
 // Request logging
 app.use(requestLogger);

@@ -1,49 +1,61 @@
-const mongoose = require('mongoose');
+const { Pool } = require('pg');
 
 /**
- * Database connection configuration
- * Implements connection pooling and error handling
+ * PostgreSQL connection pool
  */
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
 
+/**
+ * Initialize database and create tables
+ */
 const connectDB = async () => {
   try {
-    const options = {
-      // Connection pool settings for production
-      maxPoolSize: 10,
-      minPoolSize: 2,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      family: 4, // Use IPv4, skip trying IPv6
-    };
-
-    const conn = await mongoose.connect(process.env.MONGODB_URI, options);
-
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    // Test connection
+    const client = await pool.connect();
+    console.log('PostgreSQL Connected');
     
-    // Handle connection events
-    mongoose.connection.on('error', (err) => {
-      console.error(`MongoDB connection error: ${err}`);
-    });
+    // Create urls table if not exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS urls (
+        id SERIAL PRIMARY KEY,
+        short_code VARCHAR(12) UNIQUE NOT NULL,
+        original_url TEXT NOT NULL,
+        redirect_type INTEGER DEFAULT 301,
+        custom_alias BOOLEAN DEFAULT false,
+        click_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_accessed TIMESTAMP,
+        expires_at TIMESTAMP,
+        metadata JSONB,
+        created_by VARCHAR(50) DEFAULT 'api',
+        ip_hash VARCHAR(64)
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_short_code ON urls(short_code);
+      CREATE INDEX IF NOT EXISTS idx_original_url ON urls(original_url);
+      CREATE INDEX IF NOT EXISTS idx_expires_at ON urls(expires_at);
+    `);
+    
+    client.release();
+    console.log('Database tables initialized');
 
-    mongoose.connection.on('disconnected', () => {
-      console.warn('MongoDB disconnected. Attempting to reconnect...');
-    });
-
-    mongoose.connection.on('reconnected', () => {
-      console.log('MongoDB reconnected');
-    });
-
-    // Graceful shutdown
+    // Handle shutdown
     process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      console.log('MongoDB connection closed through app termination');
+      await pool.end();
+      console.log('PostgreSQL connection closed');
       process.exit(0);
     });
 
   } catch (error) {
-    console.error(`Error connecting to MongoDB: ${error.message}`);
+    console.error('Error connecting to PostgreSQL:', error.message);
     process.exit(1);
   }
 };
 
-module.exports = connectDB;
+module.exports = { connectDB, pool };

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const URL = require('../models/Url');
+const Url = require('../models/Url');
 const URLValidator = require('../utils/validator');
 const { asyncHandler, ErrorResponse } = require('../middleware/errorHandler');
 const { redirectLimiter } = require('../middleware/rateLimiter');
@@ -25,7 +25,7 @@ router.get('/:shortCode', redirectLimiter, asyncHandler(async (req, res, next) =
   }
 
   // Find URL and increment click count atomically
-  const urlDoc = await URL.findAndIncrementClicks(shortCode);
+  const urlDoc = await Url.findAndIncrementClicks(shortCode);
 
   if (!urlDoc) {
     return next(new ErrorResponse('Short URL not found', 404));
