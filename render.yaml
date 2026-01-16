@@ -1,0 +1,32 @@
+services:
+  # Web Service (Node.js App)
+  - type: web
+    name: urlshortz
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: MONGODB_URI
+        fromDatabase:
+          name: urlshortz-db
+          property: connectionString
+      - key: BASE_URL
+        sync: false
+      - key: REDIRECT_STATUS_CODE
+        value: 301
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 100
+      - key: IP_HASH_SALT
+        generateValue: true
+
+  # MongoDB Database
+databases:
+  - name: urlshortz-db
+    plan: free
