@@ -9,12 +9,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
       - key: MONGODB_URI
-        fromDatabase:
-          name: urlshortz-db
-          property: connectionString
+        sync: false
       - key: BASE_URL
         sync: false
       - key: REDIRECT_STATUS_CODE
@@ -25,8 +21,3 @@ services:
         value: 100
       - key: IP_HASH_SALT
         generateValue: true
-
-  # MongoDB Database
-databases:
-  - name: urlshortz-db
-    plan: free
